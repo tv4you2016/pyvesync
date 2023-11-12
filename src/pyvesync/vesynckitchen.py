@@ -6,7 +6,13 @@ from functools import wraps
 from typing import Optional, Union, Set
 from dataclasses import dataclass
 from pyvesync.vesyncbasedevice import VeSyncBaseDevice
-from pyvesync.helpers import Helpers as helpers
+
+from pyvesync.helpers import (
+    APP_VERSION,
+    PHONE_BRAND,
+    PHONE_OS,
+    Helpers as helpers
+)
 
 logger = logging.getLogger(__name__)
 
@@ -603,9 +609,9 @@ class VeSyncAirFryerCAF(VeSyncBaseDevice):
         return True
 
     @check_status
-    def end(self) -> bool:
+    def end(self):
         """End the cooking process."""
-        data: Dict[str, Optional[Dict[str, str]]] = {
+        data = {
             'cookMode': {
                 'cookStatus': 'endCook'
             }
@@ -850,6 +856,8 @@ class VeSyncAirFryerCAF(VeSyncBaseDevice):
             }
             sup_dict.update(status_dict)
         return json.dumps(sup_dict, indent=4)
+
+
 class VeSyncAirFryer158(VeSyncBaseDevice):
     """Cosori Air Fryer Class."""
 
@@ -1092,6 +1100,7 @@ class VeSyncAirFryer158(VeSyncBaseDevice):
     def set_cook_temp(self, value: int):
         """Return cook set time."""
         self.fryer_status.cook_temp = value
+
     @check_status
     def cook(self, set_temp: int, set_time: int) -> bool:
         """Set cook time and temperature in Minutes."""
