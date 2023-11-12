@@ -86,8 +86,7 @@ def check_status(func):
 @dataclass(init=False, eq=False, repr=False)
 class FryerStatus:
     """Dataclass for air fryer status."""
-
-	cook_temp: Optional[int] = 80
+    cook_temp: Optional[int] = 80
     cook_time: Optional[int] = 1
     ready_start: bool = False
     preheat: bool = False
