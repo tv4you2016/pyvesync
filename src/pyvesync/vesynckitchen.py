@@ -16,7 +16,12 @@ kitchen_features: dict = {
         'module': 'VeSyncAirFryer158',
         'models': ['CS137-AF/CS158-AF', 'CS158-AF', 'CS137-AF', 'CS358-AF'],
         'features': [],
-    }
+    },
+    'CosoriCAF': {
+        'module': 'VeSyncAirFryerCAF',
+        'models': ['CAF-P583S-KUS', 'CAF-P583S-KEU'],
+        'features': [],
+    },
 }
 
 
@@ -82,6 +87,8 @@ def check_status(func):
 class FryerStatus:
     """Dataclass for air fryer status."""
 
+	cook_temp: Optional[int] = 80
+    cook_time: Optional[int] = 1
     ready_start: bool = False
     preheat: bool = False
     cook_status: Optional[str] = None
@@ -141,10 +148,10 @@ class FryerStatus:
         if self.cook_status in ['pullOut', 'cookStop']:
             if self.cook_last_time is None:
                 return 0
-            return int(max(self.cook_last_time // 60, 0))
+            return int(max(self.cook_last_time, 0))
         if self.cook_last_time is not None and self.last_timestamp is not None:
             return int(max((self.cook_last_time -
-                            (int(time.time()) - self.last_timestamp)) // 60, 0))
+                            (int(time.time()) - self.last_timestamp)), 0))
         return 0
 
     @property
@@ -270,6 +277,581 @@ class FryerStatus:
             self.clear_preheat()
 
 
+@dataclass(init=False, eq=False, repr=False)
+class FryerStatusCAF:
+    """Dataclass for air fryer status."""
+
+    ready_start: bool = False
+
+    cook_temp: Optional[int] = 80
+    cook_time: Optional[int] = 1
+
+    cook_status: Optional[str] = None
+    current_temp: Optional[int] = None
+    cook_set_temp: Optional[int] = None
+    cook_set_time: Optional[int] = None
+    cook_last_time: Optional[int] = None
+    last_timestamp: Optional[int] = None
+
+    _recipename: Optional[str] = 'AirFry'
+    _temp_unit: Optional[str] = None
+
+    @property
+    def is_resumable(self) -> bool:
+        """Return if cook is resumable."""
+        if self.cook_status in ['cookStop']:
+            if self.cook_set_time is not None:
+                return self.cook_set_time > 0
+        return False
+
+    @property
+    def recipename(self) -> Optional[str]:
+        """Return recipename unit."""
+        return self._recipename
+
+    @property
+    def temp_unit(self) -> Optional[str]:
+        """Return temperature unit."""
+        return self._temp_unit
+
+    @temp_unit.setter
+    def temp_unit(self, temp_unit: str):
+        """Set temperature unit."""
+        if temp_unit.lower() in ['f', 'fahrenheit']:
+            self._temp_unit = 'fahrenheit'
+        elif temp_unit.lower() in ['c', 'celsius']:
+            self._temp_unit = 'celsius'
+        else:
+            raise ValueError(f'Invalid temperature unit - {temp_unit}')
+
+    @property
+    def cook_time_remaining(self) -> int:
+        """Returns the amount of time remaining if cooking."""
+        if self.cook_status == 'cookEnd':
+            return 0
+        if self.cook_status in ['pullOut', 'cookStop']:
+            if self.cook_last_time is None:
+                return 0
+            return int(max(self.cook_last_time, 0))
+        if self.cook_last_time is not None and self.last_timestamp is not None:
+            return int(
+                max((self.cook_last_time - (int(time.time()) - self.last_timestamp)), 0)
+            )
+        return 0
+
+    @property
+    def remaining_time(self):
+        """Return minutes remaining if cooking/heating."""
+        return self.cook_time_remaining
+
+    @property
+    def is_running(self) -> bool:
+        """Return if cooking or heating."""
+        return bool(self.cook_status in ['cooking', 'heating']) and bool(
+            self.remaining_time > 0
+        )
+
+    @property
+    def is_cooking(self) -> bool:
+        """Return if cooking."""
+        return self.cook_status == 'cooking' and self.remaining_time > 0
+
+    @property
+    def is_heating(self) -> bool:
+        """Return if heating."""
+        return self.cook_status == 'heating' and self.remaining_time > 0
+
+    def status_request(self, json_cmd: dict):
+        """Set status from jsonCmd of API call."""
+        self.last_timestamp = None
+        if not isinstance(json_cmd, dict):
+            return
+
+        cook = json_cmd.get('cookMode')
+
+        if isinstance(cook, dict):
+            if cook.get('cookStatus') == 'stop':
+                self.cook_status = 'cookStop'
+            elif cook.get('cookStatus') == 'cooking':
+                self.cook_status = 'cooking'
+                self.last_timestamp = int(time.time())
+                self.cook_set_time = cook.get('cookSetTime', self.cook_set_time)
+                self.cook_set_temp = cook.get('cookSetTemp', self.cook_set_temp)
+                self.current_temp = cook.get('currentTemp', self.current_temp)
+                self.temp_unit = cook.get('tempUnit', self.temp_unit)
+            elif cook.get('cookStatus') == 'end':
+                self.set_standby()
+                self.cook_status = 'cookEnd'
+
+    def set_standby(self):
+        """Clear cooking status."""
+        self.cook_status = 'standby'
+        self.cook_last_time = None
+        self.current_temp = None
+        self.cook_set_time = None
+        self.cook_set_temp = None
+        self.last_timestamp = None
+
+    def status_response(self, return_status: dict) -> None:
+        """Set status of Air Fryer Based on API Response."""
+        self.last_timestamp = None
+
+        self.cook_status = return_status.get('cookStatus')
+
+        if self.cook_status == 'standby':
+            self.set_standby()
+            self.current_temp = return_status.get('currentTemp')
+            return
+
+        #  If drawer is pulled out, set standby if resp does not contain other details
+        if self.cook_status == 'pullOut':
+            self.last_timestamp = None
+            if 'currentTemp' not in return_status or 'tempUnit' not in return_status:
+                self.set_standby()
+                self.current_temp = return_status.get('currentTemp')
+                self.cook_status = 'pullOut'
+                return
+
+        self._recipename = return_status['stepArray'][0].get('recipeName')
+
+        self.current_temp = return_status.get('currentTemp')
+
+        self.cook_set_time = return_status['stepArray'][0].get(
+            'cookSetTime', self.cook_set_time
+        )
+        self.cook_last_time = return_status['stepArray'][0].get('cookLastTime')
+
+        self.cook_set_temp = return_status['stepArray'][0].get('cookTemp', 0)
+        self.temp_unit = return_status.get(
+            'tempUnit', self.temp_unit
+        )  # Always keep set
+
+        #  Set last_time timestamp if cooking
+        if self.cook_status in ['cooking', 'heating']:
+            self.last_timestamp = int(time.time())
+
+        if self.cook_status == 'cookEnd':
+            self.cook_last_time = 0
+
+
+class VeSyncAirFryerCAF(VeSyncBaseDevice):
+    """Cosori Air Fryer Class."""
+
+    def __init__(self, details, manager):
+        """Init the VeSync Air Fryer 158 class."""
+        super().__init__(details, manager)
+        self.fryer_status = FryerStatusCAF()
+
+        if self.pid is None:
+            self.get_pid()
+        self.fryer_status.temp_unit = self.get_temp_unit()
+        self.ready_start = self.get_remote_cook_mode()
+        self.last_update = int(time.time())
+        self.refresh_interval = 0
+
+    def get_body(self, method: Optional[str] = None) -> dict:
+        """Return body of api calls."""
+        body = {
+            **helpers.req_body(self.manager, 'bypass'),
+            'cid': self.cid,
+            'userCountryCode': self.manager.country_code,
+            'debugMode': False,
+        }
+        if method is not None:
+            body['method'] = method
+        return body
+
+    def get_status_body(self, cmd_dict: dict) -> dict:
+        """Return body of api calls."""
+        body = self.get_body()
+        body.update(
+            {
+                'uuid': self.uuid,
+                'configModule': self.config_module,
+                'jsonCmd': cmd_dict,
+                'pid': self.pid,
+                'accountID': self.manager.account_id,
+            }
+        )
+        return body
+
+    def get_temp_unit(self):
+        """Get Air Fryer Configuration."""
+        body = self.get_body('configurationsV2')
+
+        r, _ = helpers.call_api(
+            '/cloud/v2/deviceManaged/configurationsV2', 'post', json_object=body
+        )
+        if (
+            not isinstance(r, dict)
+            or r.get('code') != 0
+            or not isinstance(r.get('result'), dict)
+        ):
+            logger.debug('Failed to get config for %s', self.device_name)
+            return
+        result = r.get('result')
+        if result is not None:
+            return result.get('airFryerInfo', {}).get('workTempUnit', 'f')
+
+    def get_remote_cook_mode(self):
+        """Get the cook mode."""
+        body = self.get_body('getRemoteCookMode158')
+        r, _ = helpers.call_api(
+            '/cloud/v1/deviceManaged/getRemoteCookMode158', 'post', json_object=body
+        )
+        if (
+            not isinstance(r, dict)
+            or r.get('code') != 0
+            or not isinstance(r.get('result'), dict)
+        ):
+            return False
+        return r.get('result', {}).get('readyStart', False)
+
+    @property
+    def recipename(self) -> str:
+        """Return temp unit."""
+        return self.fryer_status.recipename
+
+    @property
+    def temp_unit(self) -> Optional[str]:
+        """Return temp unit."""
+        return self.fryer_status.temp_unit
+
+    @property
+    def current_temp(self) -> Optional[int]:
+        """Return current temperature."""
+        return self.fryer_status.current_temp
+
+    @property
+    def cook_set_temp(self) -> Optional[int]:
+        """Return set temperature."""
+        return self.fryer_status.cook_set_temp
+
+    @property
+    def cook_last_time(self) -> Optional[int]:
+        """Return cook last time."""
+        return self.fryer_status.cook_last_time
+
+    @property
+    def cook_set_time(self) -> Optional[int]:
+        """Return cook set time."""
+        return self.fryer_status.cook_set_time
+
+    @property
+    def cook_temp(self) -> Optional[int]:
+        """Return cook set time."""
+        return self.fryer_status.cook_temp
+
+    @property
+    def cook_time(self) -> Optional[int]:
+        """Return cook set time."""
+        return self.fryer_status.cook_time
+
+    @property
+    def cook_status(self) -> Optional[str]:
+        """Return the cook status."""
+        return self.fryer_status.cook_status
+
+    @property
+    def is_cooking(self) -> bool:
+        """Return True if air fryer is heating."""
+        return self.fryer_status.is_cooking
+
+    @property
+    def is_running(self):
+        """Return True if cooking or preheating finished."""
+        return self.fryer_status.is_running
+
+    @property
+    def remaining_time(self) -> Optional[int]:
+        """Return time remaining in minutes or None if not cooking/heating."""
+        return self.fryer_status.remaining_time
+
+    def get_details(self):
+        """Get Air Fryer Status and Details."""
+        head = helpers.bypass_header()
+        body = helpers.bypass_body_v2(self.manager)
+        body['cid'] = self.cid
+        body['configModule'] = self.config_module
+        body['payload'] = {'method': 'getAirfryerStatus', 'source': 'APP', 'data': {}}
+
+        resp, _ = helpers.call_api(
+            '/cloud/v2/deviceManaged/bypassV2',
+            method='post',
+            headers=head,
+            json_object=body,
+        )
+
+        if resp is None:
+            logger.debug('Failed to get details for %s', self.device_name)
+            return False
+        if resp.get('code') == -11300030:
+            logger.debug('%s is offline', self.device_name)
+            self.fryer_status.set_standby()
+            self.fryer_status.cook_status = 'offline'
+            return False
+        if resp.get('code') != 0:
+            logger.debug(
+                'Failed to get details for %s \n with code: %s and message: %s',
+                self.device_name,
+                str(resp.get('code', 0)),
+                resp.get('msg', ''),
+            )
+            return False
+        return_status = resp.get('result', {}).get('result')
+        if return_status is None:
+            return False
+        self.fryer_status.status_response(return_status)
+        return True
+
+    @check_status
+    def end(self) -> bool:
+        """End the cooking process."""
+        data: Dict[str, Optional[Dict[str, str]]] = {
+            'cookMode': {
+                'cookStatus': 'endCook'
+            }
+        }
+
+        if self._cookmode_apiv2(data) is True:
+            self.fryer_status.set_standby()
+            return True
+        return False
+
+    def _validate_temp(self, set_temp: int) -> bool:
+        """Temperature validation."""
+        if self.fryer_status.temp_unit == 'fahrenheight':
+            if set_temp < 200 or set_temp > 400:
+                logger.debug(
+                    'Invalid temperature %s for %s', set_temp, self.device_name
+                )
+                return False
+        if self.fryer_status.temp_unit == 'celsius':
+            if set_temp < 75 or set_temp > 205:
+                logger.debug(
+                    'Invalid temperature %s for %s', set_temp, self.device_name
+                )
+                return False
+        return True
+
+    def set_cook_temp(self, value: int):
+        """Return cook set time."""
+        self.fryer_status.cook_temp = value
+
+    def set_cook_time(self, value: int):
+        """Return cook set time."""
+        self.fryer_status.cook_time = value
+
+    @check_status
+    def cookv2(self, set_temp: int, set_time: int, menumode: Optional[str]) -> bool:
+        """Set cook time and temperature in Minutes."""
+        if self._validate_temp(set_temp) is False:
+            return False
+        return self._set_cookv2(set_temp, set_time, menumode)
+
+    def update(self):
+        """Update the device details."""
+        self.get_details()
+
+    @staticmethod
+    def fryer_code_check(code: Union[str, int]) -> Optional[str]:
+        """Return the code description."""
+        if isinstance(code, str):
+            try:
+                code = int(code)
+            except ValueError:
+                return None
+        if code == 11903000:
+            return 'Error pausing, air fryer is not cooking.'
+        if code == 11902000:
+            return 'Error setting cook mode, air fryer is already cooking'
+        if str(abs(code))[0:5] == 11300:
+            return 'Air fryer is offline'
+        return None
+
+    @property
+    def _cmd_api_base(self) -> dict:
+        """Return Base api dictionary for setting status."""
+        return {
+            'mode': COOK_MODE,
+            'accountId': self.manager.account_id,
+        }
+
+    @property
+    def _cmd_api_dict(self) -> dict:
+        """Return API dictionary for setting status."""
+        cmd = self._cmd_api_base
+        cmd.update(
+            {
+                'appointmentTs': 0,
+                'recipeId': RECIPE_ID,
+                'readyStart': self.ready_start,
+                'recipeType': RECIPE_TYPE,
+                'customRecipe': CUSTOM_RECIPE,
+            }
+        )
+        return cmd
+
+    def _set_cookv2(
+        self,
+        set_temp: Optional[int] = None,
+        set_time: Optional[int] = None,
+        status: Optional[str] = 'cooking',
+    ) -> bool:
+        if set_temp is not None and set_time is not None:
+            set_cmd = self._cmd_api_dict
+            set_cmd['cookSetTime'] = set_time
+            set_cmd['cookSetTemp'] = set_temp
+
+        else:
+            set_cmd = self._cmd_api_base
+
+        set_cmd['cookStatus'] = status
+        cmd = {'cookMode': set_cmd}
+        self.end()
+        return self._cookmode_apiv2(cmd)
+
+    def _status_api(self, json_cmd: dict):
+        """Set API status with jsonCmd."""
+        body = self.get_status_body(json_cmd)
+        url = '/cloud/v1/deviceManaged/bypass'
+        resp, _ = helpers.call_api(url, 'post', json_object=body)
+        if resp is None:
+            logger.debug(
+                'Failed to set status for %s - No response from API', self.device_name
+            )
+            return False
+
+        if resp.get('code') != 0 and resp.get('code') is not None:
+            debug_msg = self.fryer_code_check(resp.get('code'))
+            logger.debug('Failed to set status for %s', self.device_name)
+            logger.debug('Code: %s', resp.get('code'))
+            logger.debug('message: %s \n', resp.get('msg'))
+            logger.debug('%s', debug_msg)
+            return False
+        self.last_update = int(time.time())
+        self.fryer_status.status_request(json_cmd)
+        self.update()
+        return True
+
+    def _cookmode_apiv2(self, method_cmd: dict):
+        """Set API status with jsonCmd."""
+        head = {
+            'Content-Type': 'application/json; charset=UTF-8',
+            'User-Agent': 'VeSync/VeSync 4.4.30(SM-T555;Android 7.1.1)',
+        }
+        body = {}
+        body['cid'] = self.cid
+        body['configModule'] = self.config_module
+        body['method'] = 'bypassV2'
+        body['acceptLanguage'] = self.manager.country_code
+        body['appVersion'] = APP_VERSION
+        body['timeZone'] = 'Europe/Lisbon'
+        body['accountID'] = self.manager.account_id
+        body['token'] = self.manager.token
+        body['debugMode'] = 'False'
+        body['deviceRegion'] = 'EU'
+        body['userCountryCode'] = 'PT'
+        body['phoneBrand'] = PHONE_BRAND
+        body['phoneOS'] = PHONE_OS
+        body['traceId'] = str(int(time.time()))
+
+        if method_cmd['cookMode'].get('cookStatus') == 'endCook':
+            body['payload'] = str({'method': 'endCook', 'source': 'APP', 'data': {}})
+        else:
+            body['payload'] = str({
+                'method': 'startCook',
+                'source': 'APP',
+                'data': {
+                    'accountId': self.manager.account_id,
+                    'hasPreheat': 0,
+                    'hasWarm': False,
+                    'mode': method_cmd['cookMode'].get('cookStatus'),
+                    'readyStart': True,
+                    'recipeId': 3,
+                    'recipeName': method_cmd['cookMode'].get('cookStatus'),
+                    'recipeType': 3,
+                    'startAct': {
+                        'cookSetTime': method_cmd['cookMode'].get('cookSetTime'),
+                        'cookTemp': method_cmd['cookMode'].get('cookSetTemp'),
+                        'preheatTemp': 0,
+                        'shakeTime': 0,
+                    },
+                    'tempUnit': 'c',
+                },
+            })
+            if isinstance(body['payload'], dict):
+                data = body['payload'].get('data')
+            else:
+                raise ValueError('Expected body['payload'] to be a dictionary.')
+
+            if self.temp_unit is None:
+                data.update(
+                    {
+                        'tempUnit': 'c'
+                    }
+                )
+            else:
+                temp_unit = self.temp_unit.lower()
+
+                if temp_unit in ['f', 'fahrenheit']:
+                    data.update(
+                        {
+                            'tempUnit': 'f'
+                        }
+                    )
+                elif temp_unit in ['c', 'celsius']:
+                    data.update(
+                        {
+                            'tempUnit': 'c'
+                        }
+                    )
+                else:
+                    raise ValueError(f'Invalid temperature unit - {self.temp_unit}')
+
+        resp, _ = helpers.call_api(
+            '/cloud/v2/deviceManaged/bypassV2',
+            method='post',
+            headers=head,
+            json_object=body,
+        )
+
+        if resp is None:
+            logger.debug(
+                'Failed to set status for %s - No response from API', self.device_name
+            )
+            return False
+
+        if resp.get('code') != 0 and resp.get('code') is not None:
+            debug_msg = self.fryer_code_check(resp.get('code'))
+            logger.debug(
+                'Failed to set status for %s \n Code: %s and message: %s \n %s',
+                self.device_name,
+                resp.get('code'),
+                resp.get('msg'),
+                debug_msg,
+            )
+            return False
+        self.last_update = int(time.time())
+        self.update()
+        return True
+
+    def displayJSON(self) -> str:
+        """Display JSON of device details."""
+        sup = super().displayJSON()
+        sup_dict = json.loads(sup)
+        sup_dict['cook_status'] = self.cook_status
+        sup_dict['temp_unit'] = self.temp_unit
+
+        if self.cook_status not in ['standby', 'cookEnd', '']:
+            status_dict = {
+                'current_temp': self.current_temp,
+                'cook_set_temp': self.cook_set_temp,
+                'cook_set_time': self.cook_set_time,
+                'cook_last_time': self.cook_last_time,
+            }
+            sup_dict.update(status_dict)
+        return json.dumps(sup_dict, indent=4)
 class VeSyncAirFryer158(VeSyncBaseDevice):
     """Cosori Air Fryer Class."""
 
@@ -364,6 +946,16 @@ class VeSyncAirFryer158(VeSyncBaseDevice):
     def cook_set_time(self) -> Optional[int]:
         """Return cook set time."""
         return self.fryer_status.cook_set_time
+
+    @property
+    def cook_temp(self) -> Optional[int]:
+        """Return cook set time."""
+        return self.fryer_status.cook_temp
+
+    @property
+    def cook_time(self) -> Optional[int]:
+        """Return cook set time."""
+        return self.fryer_status.cook_time
 
     @property
     def preheat_last_time(self) -> Optional[int]:
@@ -495,6 +1087,13 @@ class VeSyncAirFryer158(VeSyncBaseDevice):
                 return False
         return True
 
+    def set_cook_time(self, value: int):
+        """Return cook set time."""
+        self.fryer_status.cook_time = value
+
+    def set_cook_temp(self, value: int):
+        """Return cook set time."""
+        self.fryer_status.cook_temp = value
     @check_status
     def cook(self, set_temp: int, set_time: int) -> bool:
         """Set cook time and temperature in Minutes."""
