@@ -86,7 +86,7 @@ def check_status(func):
 @dataclass(init=False, eq=False, repr=False)
 class FryerStatus:
     """Dataclass for air fryer status."""
-    
+
     cook_temp: Optional[int] = 80
     cook_time: Optional[int] = 1
     ready_start: bool = False
@@ -781,7 +781,7 @@ class VeSyncAirFryerCAF(VeSyncBaseDevice):
             if isinstance(body['payload'], dict):
                 data = body['payload'].get('data')
             else:
-                raise ValueError('Expected body['payload'] to be a dictionary.')
+                raise ValueError('Expected body[payload] to be a dictionary.')
 
             if self.temp_unit is None:
                 data.update(
