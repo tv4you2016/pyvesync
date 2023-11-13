@@ -786,7 +786,6 @@ class VeSyncAirFryerCAF(VeSyncBaseDevice):
         body['phoneOS'] = PHONE_OS
         body['traceId'] = str(int(time.time()))
 
-       
         if method_cmd['cookMode'].get('cookStatus') == 'endCook':
             body['payload'] = self.generate_payload_data('endCook', None, None, None)
         else:
