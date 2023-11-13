@@ -696,32 +696,32 @@ class VeSyncAirFryerCAF(VeSyncBaseDevice):
         )
         return cmd
 
-    def generate_payload_data(self, cook_cmd, mode, time, temp):
+    def generate_payload_data(self, acook_cmd, amode, atime, atemp):
         """Generate the payload data based on the cooking."""
-        if mode == 'endCook':
+        if amode == 'endCook':
             return {'method': 'endCook', 'source': 'APP', 'data': {}}
-        else:
-            return {
-                'method': 'startCook',
-                'source': 'APP',
-                'data': {
-                    'accountId': self.manager.account_id,
-                    'hasPreheat': 0,
-                    'hasWarm': False,
-                    'mode': mode,
-                    'readyStart': True,
-                    'recipeId': 3,
-                    'recipeName': mode,
-                    'recipeType': 3,
-                    'startAct': {
-                        'cookSetTime': time,
-                        'cookTemp': temp,
-                        'preheatTemp': 0,
-                        'shakeTime': 0,
-                    },
-                    'tempUnit': 'c',
+        
+        return {
+            'method': 'startCook',
+            'source': 'APP',
+            'data': {
+                'accountId': self.manager.account_id,
+                'hasPreheat': 0,
+                'hasWarm': False,
+                'mode': amode,
+                'readyStart': True,
+                'recipeId': 3,
+                'recipeName': amode,
+                'recipeType': 3,
+                'startAct': {
+                    'cookSetTime': atime,
+                    'cookTemp': atemp,
+                    'preheatTemp': 0,
+                    'shakeTime': 0,
                 },
-            }
+                'tempUnit': 'c',
+            },
+        }
 
     def _set_cookv2(
         self,
