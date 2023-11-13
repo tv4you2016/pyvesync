@@ -788,10 +788,29 @@ class VeSyncAirFryerCAF(VeSyncBaseDevice):
 
        
         if method_cmd['cookMode'].get('cookStatus') == 'endCook':
-            body['payload'] = self.generate_payload_data('endCook', None, None, None)
+            body['payload'] = str({'method': 'endCook', 'source': 'APP', 'data': {}})
         else:
-            body['payload'] = self.generate_payload_data('startCook', method_cmd['cookMode'].get('cookStatus'), method_cmd['cookMode'].get('cookSetTime'), method_cmd['cookMode'].get('cookSetTemp'))
-
+            body['payload'] = str({
+                'method': 'startCook',
+                'source': 'APP',
+                'data': {
+                    'accountId': self.manager.account_id,
+                    'hasPreheat': 0,
+                    'hasWarm': False,
+                    'mode': method_cmd['cookMode'].get('cookStatus'),
+                    'readyStart': True,
+                    'recipeId': 3,
+                    'recipeName': method_cmd['cookMode'].get('cookStatus'),
+                    'recipeType': 3,
+                    'startAct': {
+                        'cookSetTime': method_cmd['cookMode'].get('cookSetTime'),
+                        'cookTemp': method_cmd['cookMode'].get('cookSetTemp'),
+                        'preheatTemp': 0,
+                        'shakeTime': 0,
+                    },
+                    'tempUnit': 'c',
+                },
+            })
             if isinstance(body['payload'], dict):
                 data = body['payload'].get('data')
             else:
