@@ -18,7 +18,7 @@ setup(
     long_description_content_type='text/markdown',
     url='https://github.com/tv4you2016/pyvesync',
     author='Mark Perdue, Joe Trabulsy',
-    author_email='webdjoe@gmail.com',
+    author_email='tv4you2016@gmail.com',
     license='MIT',
     classifiers=[
         'License :: OSI Approved :: MIT License',
