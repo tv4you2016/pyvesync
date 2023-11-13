@@ -700,7 +700,6 @@ class VeSyncAirFryerCAF(VeSyncBaseDevice):
         """Generate the payload data based on the cooking."""
         if amode == 'endCook':
             return {'method': 'endCook', 'source': 'APP', 'data': {}}
-        
         return {
             'method': 'startCook',
             'source': 'APP',
