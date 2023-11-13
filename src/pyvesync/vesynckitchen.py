@@ -696,6 +696,32 @@ class VeSyncAirFryerCAF(VeSyncBaseDevice):
         )
         return cmd
 
+    def generate_payload_data(self,cook_cmd, mode, time, temp):
+        if mode == 'endCook':
+            return {'method': 'endCook', 'source': 'APP', 'data': {}}
+        else:
+            return {
+                'method': 'startCook',
+                'source': 'APP',
+                'data': {
+                    'accountId': self.manager.account_id,
+                    'hasPreheat': 0,
+                    'hasWarm': False,
+                    'mode': mode,
+                    'readyStart': True,
+                    'recipeId': 3,
+                    'recipeName': mode,
+                    'recipeType': 3,
+                    'startAct': {
+                        'cookSetTime': time,
+                        'cookTemp': temp,
+                        'preheatTemp': 0,
+                        'shakeTime': 0,
+                    },
+                    'tempUnit': 'c',
+                },
+            }
+
     def _set_cookv2(
         self,
         set_temp: Optional[int] = None,
@@ -760,30 +786,12 @@ class VeSyncAirFryerCAF(VeSyncBaseDevice):
         body['phoneOS'] = PHONE_OS
         body['traceId'] = str(int(time.time()))
 
+       
         if method_cmd['cookMode'].get('cookStatus') == 'endCook':
-            body['payload'] = str({'method': 'endCook', 'source': 'APP', 'data': {}})
+            body['payload'] = self.generate_payload_data('endCook', None, None, None)
         else:
-            body['payload'] = str({
-                'method': 'startCook',
-                'source': 'APP',
-                'data': {
-                    'accountId': self.manager.account_id,
-                    'hasPreheat': 0,
-                    'hasWarm': False,
-                    'mode': method_cmd['cookMode'].get('cookStatus'),
-                    'readyStart': True,
-                    'recipeId': 3,
-                    'recipeName': method_cmd['cookMode'].get('cookStatus'),
-                    'recipeType': 3,
-                    'startAct': {
-                        'cookSetTime': method_cmd['cookMode'].get('cookSetTime'),
-                        'cookTemp': method_cmd['cookMode'].get('cookSetTemp'),
-                        'preheatTemp': 0,
-                        'shakeTime': 0,
-                    },
-                    'tempUnit': 'c',
-                },
-            })
+            body['payload'] = self.generate_payload_data('startCook', method_cmd['cookMode'].get('cookStatus'), method_cmd['cookMode'].get('cookSetTime'), method_cmd['cookMode'].get('cookSetTemp'))
+
             if isinstance(body['payload'], dict):
                 data = body['payload'].get('data')
             else:
