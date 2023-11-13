@@ -697,7 +697,7 @@ class VeSyncAirFryerCAF(VeSyncBaseDevice):
         return cmd
 
     def generate_payload_data(self, cook_cmd, mode, time, temp):
-        """ Generate the payload data based on the cooking command, mode, time, and temperature."""
+        """Generate the payload data based on the cooking."""
         if mode == 'endCook':
             return {'method': 'endCook', 'source': 'APP', 'data': {}}
         else:
