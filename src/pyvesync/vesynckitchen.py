@@ -761,9 +761,9 @@ class VeSyncAirFryerCAF(VeSyncBaseDevice):
         body['traceId'] = str(int(time.time()))
 
         if method_cmd['cookMode'].get('cookStatus') == 'endCook':
-            body['payload'] = str({'method': 'endCook', 'source': 'APP', 'data': {}})
+            body['payload'] = {'method': 'endCook', 'source': 'APP', 'data': {}}
         else:
-            body['payload'] = str({
+            body['payload'] = {
                 'method': 'startCook',
                 'source': 'APP',
                 'data': {
@@ -783,7 +783,7 @@ class VeSyncAirFryerCAF(VeSyncBaseDevice):
                     },
                     'tempUnit': 'c',
                 },
-            })
+            }
             if isinstance(body['payload'], dict):
                 data = body['payload'].get('data')
             else:
