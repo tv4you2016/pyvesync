@@ -25,7 +25,7 @@ kitchen_features: dict = {
     },
     'CosoriCAF': {
         'module': 'VeSyncAirFryerCAF',
-        'models': ['CAF-P583S-KUS', 'CAF-P583S-KEU'],
+        'models': ['CAF-P583S-KUS', 'CAF-P583S-KEU', 'CAF-LI401S'],
         'features': [],
     },
 }
@@ -45,7 +45,7 @@ def model_features(dev_type: str) -> dict:
     for dev_dict in kitchen_features.values():
         if dev_type in dev_dict['models']:
             return dev_dict
-    raise ValueError('Device not configured')
+    return {'module': '', 'models': [''], 'features': []}
 
 
 kitchen_classes: Set[str] = {v['module'] for k, v in kitchen_features.items()}
