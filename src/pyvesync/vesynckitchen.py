@@ -288,6 +288,7 @@ class FryerStatusCAF:
     """Dataclass for air fryer status."""
 
     ready_start: bool = False
+    kitchen_mode: Optional[str] = 'AirFry'
     cook_temp: Optional[int] = 80
     cook_time: Optional[int] = 1
     cook_status: Optional[str] = None
@@ -547,6 +548,11 @@ class VeSyncAirFryerCAF(VeSyncBaseDevice):
         return self.fryer_status.cook_temp
 
     @property
+    def kitchen_mode(self) -> Optional[str]:
+        """Return cook set time."""
+        return self.fryer_status.kitchen_mode
+
+    @property
     def cook_time(self) -> Optional[int]:
         """Return cook set time."""
         return self.fryer_status.cook_time
@@ -638,8 +644,12 @@ class VeSyncAirFryerCAF(VeSyncBaseDevice):
                 return False
         return True
 
+    def set_kitchen_mode(self, value: str):
+        """Return cook set kitchen mode."""
+        self.fryer_status.kitchen_mode = value
+
     def set_cook_temp(self, value: int):
-        """Return cook set time."""
+        """Return cook set temperature."""
         self.fryer_status.cook_temp = value
 
     def set_cook_time(self, value: int):
@@ -647,11 +657,18 @@ class VeSyncAirFryerCAF(VeSyncBaseDevice):
         self.fryer_status.cook_time = value
 
     @check_status
-    def cookv2(self, set_temp: int, set_time: int, menumode: Optional[str]) -> bool:
+    def cookv2(self) -> bool:
         """Set cook time and temperature in Minutes."""
-        if self._validate_temp(set_temp) is False:
+        if self._validate_temp(self.fryer_status.cook_temp) is False:
             return False
-        return self._set_cookv2(set_temp, set_time, menumode)
+
+        set_cmd = self._cmd_api_dict
+        set_cmd['cookSetTime'] = self.fryer_status.cook_time
+        set_cmd['cookSetTemp'] = self.fryer_status.cook_temp
+        set_cmd['cookStatus'] = self.fryer_status.kitchen_mode
+        cmd = {'cookMode': set_cmd}
+        self.end()
+        return self._cookmode_apiv2(cmd)
 
     def update(self):
         """Update the device details."""
@@ -698,7 +715,7 @@ class VeSyncAirFryerCAF(VeSyncBaseDevice):
 
     def generate_payload_data(self, acook_cmd, amode, atime, atemp):
         """Generate the payload data based on the cooking."""
-        if amode == 'endCook':
+        if acook_cmd == 'endCook':
             return {'method': 'endCook', 'source': 'APP', 'data': {}}
         return {
             'method': 'startCook',
@@ -721,25 +738,6 @@ class VeSyncAirFryerCAF(VeSyncBaseDevice):
                 'tempUnit': 'c',
             },
         }
-
-    def _set_cookv2(
-        self,
-        set_temp: Optional[int] = None,
-        set_time: Optional[int] = None,
-        status: Optional[str] = 'cooking',
-    ) -> bool:
-        if set_temp is not None and set_time is not None:
-            set_cmd = self._cmd_api_dict
-            set_cmd['cookSetTime'] = set_time
-            set_cmd['cookSetTemp'] = set_temp
-
-        else:
-            set_cmd = self._cmd_api_base
-
-        set_cmd['cookStatus'] = status
-        cmd = {'cookMode': set_cmd}
-        self.end()
-        return self._cookmode_apiv2(cmd)
 
     def _status_api(self, json_cmd: dict):
         """Set API status with jsonCmd."""
@@ -1109,7 +1107,7 @@ class VeSyncAirFryer158(VeSyncBaseDevice):
         self.fryer_status.cook_time = value
 
     def set_cook_temp(self, value: int):
-        """Return cook set time."""
+        """Return cook set temperature."""
         self.fryer_status.cook_temp = value
 
     @check_status
